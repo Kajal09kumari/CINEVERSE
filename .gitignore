@@ -1,0 +1,82 @@
+# ============================================================
+# CINEVERSE .gitignore
+# ============================================================
+
+# ─── Secrets & Environment ─────────────────────────────────
+# Ignore all .env files that contain real credentials.
+# The !.env.example / !.env.local.example lines un-ignore the
+# template files so they ARE committed (they hold no secrets).
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.local.example
+
+# ─── Frontend (Next.js) ────────────────────────────────────
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# ─── Backend: Python Virtual Environments ──────────────────
+# Cover all common venv directory names in both locations.
+backend/venv/
+backend/.venv/
+venv/
+.venv/
+
+# ─── Backend: Python Cache & Compiled Files ────────────────
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/**/*.pyo
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+
+# ─── ML Artifacts ──────────────────────────────────────────
+# Trained model files are large; store them in cloud storage,
+# not in git. The directories themselves are tracked.
+backend/ml/models/*.pkl
+backend/ml/models/*.joblib
+backend/ml/models/*.h5
+backend/ml/models/*.pt
+backend/ml/models/*.bin
+
+# Generated/downloaded datasets.
+# Only the specific dataset subdirectories are excluded —
+# NOT every *.csv or *.parquet in the entire project.
+# This way test fixtures, config CSVs, or docs-adjacent
+# data files elsewhere are never accidentally hidden.
+backend/ml/data/raw/
+backend/ml/data/processed/
+backend/ml/data/external/
+
+# ─── Python General ────────────────────────────────────────
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+*.egg
+.eggs/
+
+# ─── OS / Editor ───────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/settings.json
+*.code-workspace
+
+# ─── Logs ──────────────────────────────────────────────────
+# Named npm log files only — not a global *.log rule that
+# could accidentally catch a hypothetical docs/notes.log.
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ─── Jupyter ───────────────────────────────────────────────
+backend/ml/notebooks/.ipynb_checkpoints/
+.ipynb_checkpoints/
