@@ -5,10 +5,10 @@
  */
 
 import { motion } from 'framer-motion';
-import Link from 'next/link';
 import { Sparkles, ArrowRight } from 'lucide-react';
 import { Container } from '@/components/ui/Container';
 import { Button } from '@/components/ui/Button';
+import { useMiraWidget } from '@/context/MiraWidgetContext';
 
 const EXAMPLE_PROMPTS = [
   'Find something like Interstellar.',
@@ -18,6 +18,8 @@ const EXAMPLE_PROMPTS = [
 ] as const;
 
 export function MiraPreview() {
+  const { openMira } = useMiraWidget();
+
   return (
     <section aria-labelledby="mira-heading">
       <Container>
@@ -68,13 +70,18 @@ export function MiraPreview() {
                 and helps you discover something worth your time.
               </p>
 
-              <Button href="/assistant" variant="primary" size="lg">
+              <Button
+                type="button"
+                onClick={() => openMira()}
+                variant="primary"
+                size="lg"
+              >
                 <Sparkles size={16} />
                 Talk to MIRA
               </Button>
             </motion.div>
 
-            {/* Right: static example prompts */}
+            {/* Right: interactive example prompts */}
             <motion.div
               initial={{ opacity: 0, x: 16 }}
               whileInView={{ opacity: 1, x: 0 }}
@@ -86,11 +93,12 @@ export function MiraPreview() {
                 Example prompts
               </p>
               {EXAMPLE_PROMPTS.map((prompt) => (
-                <Link
+                <button
                   key={prompt}
-                  href={`/assistant?q=${encodeURIComponent(prompt)}`}
-                  className="group flex items-center justify-between gap-3 p-4 rounded-xl bg-[#101014]/55 border border-white/[0.08] hover:border-[#8060A8]/45 transition-all duration-200"
-                  aria-label={`Open MIRA with prompt: ${prompt}`}
+                  type="button"
+                  onClick={() => openMira(prompt)}
+                  className="w-full text-left group flex items-center justify-between gap-3 p-4 rounded-xl bg-[#101014]/55 border border-white/[0.08] hover:border-[#8060A8]/45 transition-all duration-200"
+                  aria-label={`Ask MIRA: ${prompt}`}
                 >
                   <span className="text-sm text-[#AAA5B3] group-hover:text-[#F5F2F7] transition-colors">
                     &ldquo;{prompt}&rdquo;
@@ -99,7 +107,7 @@ export function MiraPreview() {
                     size={15}
                     className="text-[#77727F] group-hover:text-[#A68BC7] flex-shrink-0 transition-colors"
                   />
-                </Link>
+                </button>
               ))}
             </motion.div>
           </div>

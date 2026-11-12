@@ -17,6 +17,7 @@ import {
   syncWatchlistBulk,
 } from '@/services/libraryService';
 import { getActiveUserId, subscribeActiveUserId } from '@/lib/userContext';
+import { trackEvent } from '@/services/analyticsService';
 
 const STORAGE_PREFIX = 'cineverse_watchlist_prototype';
 const EMPTY_WATCHLIST: Movie[] = [];
@@ -187,8 +188,22 @@ export function useWatchlist() {
 
     if (exists) {
       void deleteWatchlistItem(movie.id, uid).catch(() => {});
+      trackEvent({
+        event_type: 'watchlist_removed',
+        user_id: uid,
+        content_id: movie.id,
+        title: movie.title,
+        source_surface: 'watchlist',
+      });
     } else {
       void saveWatchlistItem(movie, uid).catch(() => {});
+      trackEvent({
+        event_type: 'watchlist_added',
+        user_id: uid,
+        content_id: movie.id,
+        title: movie.title,
+        source_surface: 'watchlist',
+      });
     }
   }, []);
 

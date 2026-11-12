@@ -285,6 +285,39 @@ export function DiscoverClient() {
         setTotalPages(Math.max(1, res.total_pages));
         setTotalResults(res.total_results);
         setError(null);
+        void import('@/services/analyticsService').then(({ trackEvent }) => {
+          if (activeQuery) {
+            trackEvent({
+              event_type: 'content_searched',
+              source_surface: 'discover',
+              dedupe_key: `search:${activeQuery.toLowerCase()}:${urlContentType}`,
+              metadata: {
+                query: activeQuery,
+                media_type: urlContentType,
+                result_count: res.results.length,
+              },
+            });
+          } else if (
+            urlContentType !== 'ALL' ||
+            resolvedGenreIds ||
+            urlLanguage ||
+            urlYear ||
+            effectiveMinRating ||
+            urlSortBy !== 'popularity_desc'
+          ) {
+            trackEvent({
+              event_type: 'discover_filters_used',
+              source_surface: 'discover',
+              dedupe_key: `filters:${urlContentType}:${resolvedGenreIds}:${urlSortBy}:${urlLanguage}`,
+              metadata: {
+                media_type: urlContentType,
+                genre: urlGenreParam || resolvedGenreIds || '',
+                language: urlLanguage,
+                sort_by: urlSortBy,
+              },
+            });
+          }
+        });
       })
       .catch((err) => {
         if (!active) return;
@@ -305,6 +338,7 @@ export function DiscoverClient() {
   }, [
     urlQuery,
     urlContentType,
+    urlGenreParam,
     resolvedGenreIds,
     urlLanguage,
     urlRegion,

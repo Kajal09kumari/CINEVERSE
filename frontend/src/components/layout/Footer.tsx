@@ -20,9 +20,10 @@ const EXPLORE_LINKS = [
 ] as const;
 
 const COMPANY_LINKS = [
-  { label: 'About',   href: '/about'   },
-  { label: 'Privacy', href: '/privacy' },
-  { label: 'Profile', href: '/profile' },
+  { label: 'About',     href: '/about'   },
+  { label: 'Privacy',   href: '/privacy' },
+  { label: 'Profile',   href: '/profile' },
+  { label: 'Analytics', href: '/admin'   },
 ] as const;
 
 export function Footer() {

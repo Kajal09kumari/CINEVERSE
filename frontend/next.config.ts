@@ -8,9 +8,8 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
 
   /**
-   * Allow Next.js <Image> to load images from TMDB's CDN.
-   * Without this, any <Image src="https://image.tmdb.org/..." /> will throw
-   * a configuration error at runtime.
+   * Allow Next.js <Image> to load images from Watchmode's CDNs
+   * (Watchmode API returns both cdn.watchmode.com and image.tmdb.org URLs).
    */
   images: {
     remotePatterns: [

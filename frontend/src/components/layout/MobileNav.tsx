@@ -17,6 +17,7 @@ import {
   User,
   X,
 } from 'lucide-react';
+import { useMiraWidget } from '@/context/MiraWidgetContext';
 
 interface NavLink {
   label: string;
@@ -38,6 +39,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ size?: number; strokeWidth?
 
 export function MobileNav({ isOpen, links, onClose }: MobileNavProps) {
   const pathname = usePathname();
+  const { openMira } = useMiraWidget();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -124,14 +126,17 @@ export function MobileNav({ isOpen, links, onClose }: MobileNavProps) {
 
               <ul className="space-y-1" role="list">
                 <li>
-                  <Link
-                    href="/assistant"
-                    onClick={onClose}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#A68BC7] hover:text-[#F5F2F7] transition-colors bg-[#8060A8]/15"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      openMira();
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-[#A68BC7] hover:text-[#F5F2F7] transition-colors bg-[#8060A8]/15 hover:bg-[#8060A8]/25 text-left"
                   >
                     <Sparkles size={18} strokeWidth={2} />
                     Talk to MIRA
-                  </Link>
+                  </button>
                 </li>
                 <li>
                   <Link

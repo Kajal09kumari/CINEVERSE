@@ -39,6 +39,7 @@ import {
   submitRecommendationFeedback,
 } from '@/services/miraService';
 import { getActiveUserId } from '@/lib/userContext';
+import { contentImageUrl } from '@/lib/utils';
 import type {
   FeedbackType,
   MiraMessage,
@@ -387,9 +388,9 @@ export function MiraChatClient() {
                                 href={detailHref}
                                 className="w-20 h-30 rounded-xl overflow-hidden bg-[#101014] shrink-0 relative border border-white/[0.06]"
                               >
-                                {rec.poster_url ? (
+                                {contentImageUrl(rec.poster_url) ? (
                                   <Image
-                                    src={rec.poster_url}
+                                    src={contentImageUrl(rec.poster_url)!}
                                     alt={rec.title}
                                     fill
                                     sizes="80px"
@@ -456,6 +457,18 @@ export function MiraChatClient() {
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   <Link
                                     href={detailHref}
+                                    onClick={() => {
+                                      void import('@/services/analyticsService').then(
+                                        ({ trackEvent }) => {
+                                          trackEvent({
+                                            event_type: 'recommendation_clicked',
+                                            content_id: rec.content_id ?? null,
+                                            title: rec.title,
+                                            source_surface: 'mira_chat',
+                                          });
+                                        }
+                                      );
+                                    }}
                                     className="px-2.5 py-1 rounded-lg bg-[#101014] hover:bg-[#1C1A23] border border-white/[0.1] text-[11px] font-medium text-[#F5F2F7] transition-colors"
                                   >
                                     {rec.content_id ? 'View Details' : 'Find Details'}

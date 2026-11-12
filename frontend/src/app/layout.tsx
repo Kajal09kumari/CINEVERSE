@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, Playfair_Display } from 'next/font/google';
+import { MiraWidgetProvider } from '@/context/MiraWidgetContext';
+import { MiraFloatingWidget } from '@/components/assistant/MiraFloatingWidget';
 import './globals.css';
 
 /**
@@ -44,6 +46,7 @@ export const metadata: Metadata = {
   },
 };
 
+
 interface RootLayoutProps {
   children: React.ReactNode;
 }
@@ -52,7 +55,16 @@ export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en" className={`${inter.variable} ${playfair.variable}`}>
       <body className="min-h-screen antialiased bg-[#101014] text-[#F5F2F7]">
-        {children}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-[#7c6fcd] focus:text-white focus:text-sm focus:font-medium"
+        >
+          Skip to main content
+        </a>
+        <MiraWidgetProvider>
+          {children}
+          <MiraFloatingWidget />
+        </MiraWidgetProvider>
       </body>
     </html>
   );

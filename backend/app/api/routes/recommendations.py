@@ -130,6 +130,16 @@ async def submit_feedback(
         reason=payload.reason,
     )
     service.invalidate_user_cache(payload.user_id)
+    from app.services.analytics_service import track_product_event_safe
+
+    track_product_event_safe(
+        event_type="recommendation_feedback",
+        user_id=payload.user_id,
+        content_id=payload.content_id,
+        title=payload.title,
+        source_surface="recommendations",
+        metadata={"feedback": payload.feedback_type},
+    )
     notes = {
         "like": "Recorded positive preference signal without overriding saved genre filters.",
         "dislike": "Dampened similar tone/item weighting and excluded from future picks.",

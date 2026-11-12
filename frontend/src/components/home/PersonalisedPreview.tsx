@@ -36,6 +36,7 @@ import {
   submitRecommendationFeedback,
 } from '@/services/miraService';
 import { getActiveUserId, subscribeActiveUserId } from '@/lib/userContext';
+import { contentImageUrl } from '@/lib/utils';
 import type {
   AdaptiveHomepageResponse,
   FeedbackType,
@@ -90,7 +91,21 @@ export function PersonalisedPreview() {
   const loadAdaptiveHome = useCallback(() => {
     const uid = getActiveUserId();
     fetchAdaptiveHomeSections({ userId: uid, perSectionK: 4 })
-      .then((res) => setData(res))
+      .then((res) => {
+        setData(res);
+        const totalItems = res.sections?.reduce((acc, s) => acc + s.items.length, 0) ?? 0;
+        if (totalItems > 0) {
+          void import('@/services/analyticsService').then(({ trackEvent }) => {
+            trackEvent({
+              event_type: 'recommendation_displayed',
+              user_id: uid,
+              source_surface: 'adaptive_home',
+              dedupe_key: `rec_disp_home:${uid}:${totalItems}`,
+              metadata: { count: totalItems, sections: res.sections.length },
+            });
+          });
+        }
+      })
       .catch(() => setData(null))
       .finally(() => setLoaded(true));
   }, []);
@@ -424,9 +439,9 @@ export function PersonalisedPreview() {
                               href={href}
                               className="relative w-20 h-28 shrink-0 rounded-xl overflow-hidden bg-[#1D1B25]"
                             >
-                              {item.poster_url ? (
+                              {contentImageUrl(item.poster_url) ? (
                                 <Image
-                                  src={item.poster_url}
+                                  src={contentImageUrl(item.poster_url)!}
                                   alt={item.title}
                                   fill
                                   sizes="80px"
@@ -439,7 +454,22 @@ export function PersonalisedPreview() {
 
                             <div className="flex-1 min-w-0 space-y-1.5">
                               <div className="flex items-start justify-between gap-2">
-                                <Link href={href} className="min-w-0">
+                                <Link
+                                  href={href}
+                                  className="min-w-0"
+                                  onClick={() => {
+                                    void import('@/services/analyticsService').then(
+                                      ({ trackEvent }) => {
+                                        trackEvent({
+                                          event_type: 'recommendation_clicked',
+                                          content_id: item.content_id ?? null,
+                                          title: item.title,
+                                          source_surface: 'adaptive_home',
+                                        });
+                                      }
+                                    );
+                                  }}
+                                >
                                   <h4 className="text-sm font-semibold text-[#F5F2F7] group-hover:text-[#D9A45D] transition-colors truncate">
                                     {item.title}
                                   </h4>

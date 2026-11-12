@@ -29,6 +29,7 @@ import { Container } from '@/components/ui/Container';
 import { MobileNav } from './MobileNav';
 import { getTrendingMovies, searchMovies, resolveMovieGenres } from '@/services/movieService';
 import { releaseYear } from '@/lib/utils';
+import { useMiraWidget } from '@/context/MiraWidgetContext';
 import type { Movie } from '@/types';
 
 const NAV_LINKS = [
@@ -63,6 +64,7 @@ function NavbarContent() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const pathname = usePathname();
   const router = useRouter();
+  const { isOpen: isMiraOpen, isMinimized: isMiraMinimized, toggleMira } = useMiraWidget();
 
   useEffect(() => {
     if (!searchOpen) return;
@@ -203,14 +205,24 @@ function NavbarContent() {
                 <Search size={18} strokeWidth={1.8} />
               </button>
 
-              <Link
-                href="/assistant"
-                className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium text-[#F5F2F7] transition-colors duration-200 bg-[#8060A8]/25 hover:bg-[#8060A8]/40 border border-[#8060A8]/40 whitespace-nowrap"
-                aria-label="Talk to MIRA, your AI film assistant"
+              <button
+                type="button"
+                onClick={toggleMira}
+                className={`hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+                  isMiraOpen && !isMiraMinimized
+                    ? 'bg-[#8060A8] text-white shadow-[0_0_18px_rgba(128,96,168,0.5)] border border-[#A68BC7]'
+                    : 'bg-[#8060A8]/25 hover:bg-[#8060A8]/40 text-[#F5F2F7] border border-[#8060A8]/40'
+                }`}
+                aria-label="Toggle MIRA AI film assistant"
+                aria-expanded={isMiraOpen && !isMiraMinimized}
               >
-                <Sparkles size={14} className="text-[#A68BC7]" strokeWidth={2} />
+                <Sparkles
+                  size={14}
+                  className={isMiraOpen && !isMiraMinimized ? 'text-white' : 'text-[#A68BC7]'}
+                  strokeWidth={2}
+                />
                 <span>MIRA</span>
-              </Link>
+              </button>
 
               <Link
                 href="/profile"
@@ -315,7 +327,20 @@ function NavbarContent() {
                         <li key={movie.id}>
                           <Link
                             href={`/movie/${movie.id}`}
-                            onClick={() => setSearchOpen(false)}
+                            onClick={() => {
+                              setSearchOpen(false);
+                              void import('@/services/analyticsService').then(
+                                ({ trackEvent }) => {
+                                  trackEvent({
+                                    event_type: 'search_result_clicked',
+                                    content_id: movie.id,
+                                    title: movie.title,
+                                    source_surface: 'navbar_search',
+                                    metadata: { query: searchQuery.trim() },
+                                  });
+                                }
+                              );
+                            }}
                             className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.05] transition-colors"
                           >
                             <div className="min-w-0">

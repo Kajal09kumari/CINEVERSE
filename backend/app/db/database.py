@@ -52,6 +52,9 @@ class DatabaseManager:
         conn = sqlite3.connect(str(self.db_path), timeout=10.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA synchronous = NORMAL;")
+        conn.execute("PRAGMA busy_timeout = 5000;")
         try:
             yield conn
             conn.commit()
@@ -238,6 +241,23 @@ class DatabaseManager:
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_interaction_user ON interaction_history(user_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS analytics_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    user_id TEXT,
+                    session_id TEXT,
+                    content_id INTEGER,
+                    title TEXT,
+                    source_surface TEXT DEFAULT '',
+                    dedupe_key TEXT DEFAULT '',
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_analytics_type_created ON analytics_events(event_type, created_at);
+                CREATE INDEX IF NOT EXISTS idx_analytics_user ON analytics_events(user_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_analytics_dedupe ON analytics_events(dedupe_key, created_at);
                 """
             )
             existing_pref_cols = {
@@ -1424,6 +1444,375 @@ class DatabaseManager:
                 "chat_sessions_cleared": c_sess,
                 "chat_messages_cleared": c_msg,
             }
+
+    @staticmethod
+    def _sanitize_analytics_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
+        if not metadata or not isinstance(metadata, dict):
+            return {}
+        blocked_substrings = (
+            "password",
+            "token",
+            "secret",
+            "api_key",
+            "apikey",
+            "authorization",
+            "cookie",
+            "credential",
+            "private_chat",
+            "chat_log",
+        )
+        sanitized: dict[str, Any] = {}
+        for idx, (raw_key, raw_val) in enumerate(metadata.items()):
+            if idx >= 24:
+                break
+            key = str(raw_key)[:64]
+            lower_key = key.lower()
+            if any(bad in lower_key for bad in blocked_substrings):
+                continue
+            if isinstance(raw_val, (int, float, bool)) or raw_val is None:
+                sanitized[key] = raw_val
+            elif isinstance(raw_val, str):
+                sanitized[key] = raw_val[:240]
+            elif isinstance(raw_val, list):
+                sanitized[key] = [str(item)[:80] for item in raw_val[:12]]
+            else:
+                sanitized[key] = str(raw_val)[:240]
+        return sanitized
+
+    def record_analytics_event(
+        self,
+        *,
+        event_type: str,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        content_id: int | None = None,
+        title: str | None = None,
+        source_surface: str = "",
+        dedupe_key: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        now_dt = datetime.now(timezone.utc)
+        now_iso = now_dt.isoformat()
+        window_cutoff = (now_dt - timedelta(seconds=5)).isoformat()
+        clean_meta = self._sanitize_analytics_metadata(metadata)
+        clean_dedupe = (dedupe_key or "").strip()[:180]
+        clean_title = (title or "").strip()[:200] or None
+        clean_surface = (source_surface or "").strip()[:80]
+        clean_user = (user_id or "").strip()[:100] or None
+        clean_session = (session_id or "").strip()[:100] or None
+
+        with self.connection() as conn:
+            if clean_dedupe:
+                existing = conn.execute(
+                    """
+                    SELECT id FROM analytics_events
+                    WHERE dedupe_key = ? AND created_at >= ?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (clean_dedupe, window_cutoff),
+                ).fetchone()
+                if existing:
+                    return {
+                        "recorded": False,
+                        "deduped": True,
+                        "event_id": int(existing["id"]),
+                    }
+
+            cur = conn.execute(
+                """
+                INSERT INTO analytics_events (
+                    event_type, user_id, session_id, content_id, title,
+                    source_surface, dedupe_key, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_type,
+                    clean_user,
+                    clean_session,
+                    content_id,
+                    clean_title,
+                    clean_surface,
+                    clean_dedupe,
+                    json.dumps(clean_meta),
+                    now_iso,
+                ),
+            )
+            return {
+                "recorded": True,
+                "deduped": False,
+                "event_id": int(cur.lastrowid) if cur.lastrowid else None,
+            }
+
+    def get_admin_analytics(self, days: int | None = 7) -> dict[str, Any]:
+        cutoff_iso: str | None = None
+        if days is not None and days > 0:
+            cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+        where_clause = "WHERE created_at >= ?" if cutoff_iso else ""
+        params: tuple[Any, ...] = (cutoff_iso,) if cutoff_iso else ()
+
+        with self.connection() as conn:
+            counts_rows = conn.execute(
+                f"""
+                SELECT event_type, COUNT(*) AS cnt
+                FROM analytics_events
+                {where_clause}
+                GROUP BY event_type
+                """,
+                params,
+            ).fetchall()
+            counts = {row["event_type"]: int(row["cnt"]) for row in counts_rows}
+
+            totals_row = conn.execute(
+                f"""
+                SELECT
+                    COUNT(*) AS total_events,
+                    COUNT(DISTINCT CASE WHEN user_id IS NOT NULL AND user_id != '' THEN user_id END) AS unique_users,
+                    COUNT(DISTINCT CASE WHEN session_id IS NOT NULL AND session_id != '' THEN session_id END) AS unique_sessions
+                FROM analytics_events
+                {where_clause}
+                """,
+                params,
+            ).fetchone()
+
+            watchlist_count = int(
+                conn.execute(
+                    f"SELECT COUNT(*) AS cnt FROM watchlist_items {('WHERE added_at >= ?' if cutoff_iso else '')}",
+                    params,
+                ).fetchone()["cnt"]
+            )
+            collections_count = int(
+                conn.execute(
+                    f"SELECT COUNT(*) AS cnt FROM collections {('WHERE created_at >= ?' if cutoff_iso else '')}",
+                    params,
+                ).fetchone()["cnt"]
+            )
+            mira_msg_count = int(
+                conn.execute(
+                    f"SELECT COUNT(*) AS cnt FROM chat_messages {where_clause}",
+                    params,
+                ).fetchone()["cnt"]
+            )
+            api_credits_used = int(
+                conn.execute(
+                    f"SELECT COALESCE(SUM(credits_spent), 0) AS cnt FROM api_credit_usage {('WHERE recorded_at >= ?' if cutoff_iso else '')}",
+                    params,
+                ).fetchone()["cnt"]
+            )
+
+            top_viewed_rows = conn.execute(
+                f"""
+                SELECT content_id, COALESCE(MAX(NULLIF(title, '')), 'Untitled') AS title, COUNT(*) AS views
+                FROM analytics_events
+                WHERE event_type = 'content_viewed'
+                {('AND created_at >= ?' if cutoff_iso else '')}
+                GROUP BY COALESCE(CAST(content_id AS TEXT), title)
+                ORDER BY views DESC
+                LIMIT 8
+                """,
+                params,
+            ).fetchall()
+
+            search_rows = conn.execute(
+                f"""
+                SELECT metadata_json FROM analytics_events
+                WHERE event_type = 'content_searched'
+                {('AND created_at >= ?' if cutoff_iso else '')}
+                ORDER BY id DESC LIMIT 500
+                """,
+                params,
+            ).fetchall()
+            query_counts: dict[str, int] = {}
+            for row in search_rows:
+                try:
+                    meta = json.loads(row["metadata_json"] or "{}")
+                except json.JSONDecodeError:
+                    meta = {}
+                q = str(meta.get("query") or "").strip().lower()
+                if q:
+                    query_counts[q] = query_counts.get(q, 0) + 1
+            top_searches = [
+                {"query": q, "count": c}
+                for q, c in sorted(query_counts.items(), key=lambda x: (-x[1], x[0]))[:8]
+            ]
+
+            filter_rows = conn.execute(
+                f"""
+                SELECT metadata_json FROM analytics_events
+                WHERE event_type = 'discover_filters_used'
+                {('AND created_at >= ?' if cutoff_iso else '')}
+                ORDER BY id DESC LIMIT 500
+                """,
+                params,
+            ).fetchall()
+            filter_counts: dict[str, int] = {}
+            genre_counts: dict[str, int] = {}
+            for row in filter_rows:
+                try:
+                    meta = json.loads(row["metadata_json"] or "{}")
+                except json.JSONDecodeError:
+                    meta = {}
+                for fname in ("media_type", "genre", "sort_by", "language"):
+                    val = str(meta.get(fname) or "").strip()
+                    if val and val.lower() not in ("all", "default", "none", ""):
+                        label = f"{fname}:{val}"
+                        filter_counts[label] = filter_counts.get(label, 0) + 1
+                        if fname == "genre":
+                            genre_counts[val] = genre_counts.get(val, 0) + 1
+
+            # Also include genres from content_viewed metadata if recorded
+            viewed_meta_rows = conn.execute(
+                f"""
+                SELECT metadata_json FROM analytics_events
+                WHERE event_type = 'content_viewed'
+                {('AND created_at >= ?' if cutoff_iso else '')}
+                ORDER BY id DESC LIMIT 500
+                """,
+                params,
+            ).fetchall()
+            for row in viewed_meta_rows:
+                try:
+                    meta = json.loads(row["metadata_json"] or "{}")
+                except json.JSONDecodeError:
+                    meta = {}
+                genres = meta.get("genres")
+                if isinstance(genres, list):
+                    for g in genres:
+                        gs = str(g).strip()
+                        if gs:
+                            genre_counts[gs] = genre_counts.get(gs, 0) + 1
+
+            feedback_rows = conn.execute(
+                f"""
+                SELECT metadata_json FROM analytics_events
+                WHERE event_type = 'recommendation_feedback'
+                {('AND created_at >= ?' if cutoff_iso else '')}
+                """,
+                params,
+            ).fetchall()
+            likes = 0
+            dislikes = 0
+            for row in feedback_rows:
+                try:
+                    meta = json.loads(row["metadata_json"] or "{}")
+                except json.JSONDecodeError:
+                    meta = {}
+                val = str(meta.get("feedback") or meta.get("action") or "").lower()
+                if val in ("like", "liked", "up"):
+                    likes += 1
+                elif val in ("dislike", "disliked", "down"):
+                    dislikes += 1
+
+            mira_events = conn.execute(
+                f"""
+                SELECT metadata_json, source_surface, event_type FROM analytics_events
+                WHERE event_type IN ('mira_conversation_started', 'recommendation_clicked')
+                {('AND created_at >= ?' if cutoff_iso else '')}
+                ORDER BY id DESC LIMIT 500
+                """,
+                params,
+            ).fetchall()
+            intent_counts: dict[str, int] = {}
+            mira_rec_clicks = 0
+            for row in mira_events:
+                if row["event_type"] == "recommendation_clicked":
+                    if "mira" in str(row["source_surface"] or "").lower():
+                        mira_rec_clicks += 1
+                    continue
+                try:
+                    meta = json.loads(row["metadata_json"] or "{}")
+                except json.JSONDecodeError:
+                    meta = {}
+                intent = str(meta.get("intent") or "").strip()
+                if intent:
+                    intent_counts[intent] = intent_counts.get(intent, 0) + 1
+
+            daily_rows = conn.execute(
+                f"""
+                SELECT
+                    substr(created_at, 1, 10) AS day,
+                    SUM(CASE WHEN event_type = 'content_viewed' THEN 1 ELSE 0 END) AS views,
+                    SUM(CASE WHEN event_type = 'content_searched' THEN 1 ELSE 0 END) AS searches,
+                    SUM(CASE WHEN event_type IN ('recommendation_displayed', 'recommendation_clicked') THEN 1 ELSE 0 END) AS recommendations,
+                    SUM(CASE WHEN event_type = 'mira_conversation_started' THEN 1 ELSE 0 END) AS mira
+                FROM analytics_events
+                {where_clause}
+                GROUP BY substr(created_at, 1, 10)
+                ORDER BY day ASC
+                LIMIT 31
+                """,
+                params,
+            ).fetchall()
+
+        recs_displayed = counts.get("recommendation_displayed", 0)
+        recs_clicked = counts.get("recommendation_clicked", 0)
+        ctr_pct = round((recs_clicked / recs_displayed) * 100, 2) if recs_displayed > 0 else None
+        total_fb = likes + dislikes
+        like_ratio_pct = round((likes / total_fb) * 100, 2) if total_fb > 0 else None
+
+        return {
+            "days": days,
+            "generated_at": _utc_now_iso(),
+            "platform_overview": {
+                "total_events": int(totals_row["total_events"]) if totals_row else 0,
+                "unique_users": int(totals_row["unique_users"]) if totals_row else 0,
+                "unique_sessions": int(totals_row["unique_sessions"]) if totals_row else 0,
+                "active_watchlist_items": watchlist_count,
+                "total_collections": collections_count,
+                "total_searches": counts.get("content_searched", 0),
+                "total_content_views": counts.get("content_viewed", 0),
+                "mira_conversations_started": counts.get("mira_conversation_started", 0),
+                "api_credits_used": api_credits_used,
+            },
+            "content_analytics": {
+                "top_viewed_content": [
+                    {
+                        "content_id": row["content_id"],
+                        "title": row["title"],
+                        "views": int(row["views"]),
+                    }
+                    for row in top_viewed_rows
+                ],
+                "top_searched_queries": top_searches,
+                "top_genres": [
+                    {"genre": g, "count": c}
+                    for g, c in sorted(genre_counts.items(), key=lambda x: (-x[1], x[0]))[:8]
+                ],
+                "discover_filter_usage": [
+                    {"filter": f, "count": c}
+                    for f, c in sorted(filter_counts.items(), key=lambda x: (-x[1], x[0]))[:8]
+                ],
+                "streaming_checks": counts.get("streaming_availability_checked", 0),
+            },
+            "recommendation_analytics": {
+                "recommendations_displayed": recs_displayed,
+                "recommendations_clicked": recs_clicked,
+                "ctr_pct": ctr_pct,
+                "likes": likes,
+                "dislikes": dislikes,
+                "like_ratio_pct": like_ratio_pct,
+            },
+            "mira_analytics": {
+                "conversations_started": counts.get("mira_conversation_started", 0),
+                "total_messages": mira_msg_count,
+                "recommendation_clicks_from_mira": mira_rec_clicks,
+                "top_intents": [
+                    {"intent": k, "count": v}
+                    for k, v in sorted(intent_counts.items(), key=lambda x: (-x[1], x[0]))[:6]
+                ],
+            },
+            "event_breakdown": counts,
+            "daily_activity": [
+                {
+                    "date": row["day"],
+                    "views": int(row["views"]),
+                    "searches": int(row["searches"]),
+                    "recommendations": int(row["recommendations"]),
+                    "mira": int(row["mira"]),
+                }
+                for row in daily_rows
+            ],
+        }
 
 
 _db_manager: DatabaseManager | None = None

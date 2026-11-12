@@ -11,6 +11,8 @@ import { useCallback, useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { FolderPlus, Layers, Plus, Star, Trash2, X } from 'lucide-react';
+import { Navbar } from '@/components/layout/Navbar';
+import { Footer } from '@/components/layout/Footer';
 import { Container } from '@/components/ui/Container';
 import { Button } from '@/components/ui/Button';
 import { PosterFallback } from '@/components/movies/PosterFallback';
@@ -79,6 +81,12 @@ export default function CollectionsPage() {
     setCreating(true);
     try {
       await createCollection(trimmed, description.trim());
+      const { trackEvent } = await import('@/services/analyticsService');
+      trackEvent({
+        event_type: 'collection_created',
+        title: trimmed,
+        source_surface: 'collections_page',
+      });
       setName('');
       setDescription('');
       await refresh();
@@ -120,9 +128,12 @@ export default function CollectionsPage() {
   }
 
   return (
-    <Container className="pt-28 pb-20 space-y-10">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-white/[0.06] pb-6">
+    <div className="min-h-screen flex flex-col bg-[#101014] text-[#F5F2F7] overflow-x-hidden">
+      <Navbar />
+      <main className="flex-1 min-w-0">
+        <Container className="pt-28 pb-20 space-y-10">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-white/[0.06] pb-6">
         <div className="space-y-2">
           <p className="text-[11px] font-semibold tracking-[0.22em] uppercase text-[#A68BC7]">
             Curated Lists
@@ -322,6 +333,9 @@ export default function CollectionsPage() {
           ))}
         </div>
       )}
-    </Container>
+        </Container>
+      </main>
+      <Footer />
+    </div>
   );
 }

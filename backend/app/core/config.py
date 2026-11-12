@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_key: str = ""
 
+    # Admin Analytics & Security
+    admin_api_key: str = ""
+    rate_limit_per_minute: int = 180
+
     # Legacy TMDB credential kept optional only for migration compatibility (never called)
     tmdb_access_token: str = ""
 
@@ -54,6 +58,12 @@ class Settings(BaseSettings):
         """Return True when a non-placeholder Watchmode API key is configured."""
         key = (self.watchmode_api_key or "").strip()
         return bool(key and key != "your_watchmode_api_key")
+
+    @property
+    def has_admin_key(self) -> bool:
+        """Return True when a non-placeholder Admin API key is configured."""
+        key = (self.admin_api_key or "").strip()
+        return bool(key and key != "your_admin_api_key_here")
 
     @property
     def sqlite_db_path(self) -> Path:

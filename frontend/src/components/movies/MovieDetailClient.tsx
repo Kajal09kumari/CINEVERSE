@@ -154,6 +154,32 @@ export function MovieDetailClient({ movieId }: MovieDetailClientProps) {
           interaction_type: 'viewed',
         }).catch(() => {});
 
+        void import('@/services/analyticsService').then(({ trackEvent }) => {
+          trackEvent({
+            event_type: 'content_viewed',
+            user_id: uid,
+            content_id: detail.id,
+            title: detail.title,
+            source_surface: 'movie_detail',
+            dedupe_key: `view:${detail.id}`,
+            metadata: {
+              content_type: detail.content_type ?? 'MOVIE',
+              genres: detail.genres.map((g) => g.name),
+            },
+          });
+          trackEvent({
+            event_type: 'streaming_availability_checked',
+            user_id: uid,
+            content_id: detail.id,
+            title: detail.title,
+            source_surface: 'movie_detail',
+            dedupe_key: `stream:${detail.id}`,
+            metadata: {
+              source_count: detail.streaming_sources?.length ?? 0,
+            },
+          });
+        });
+
         const [simResult, mlResult, ratingsResult, colsResult] = await Promise.allSettled([
           getSimilarMovies(detail.id, 1),
           getSimilarRecommendations(detail.id, { userId: uid, topK: 6 }),
@@ -855,9 +881,9 @@ export function MovieDetailClient({ movieId }: MovieDetailClientProps) {
                     className="group p-4 rounded-2xl bg-[#17161D] border border-white/[0.08] hover:border-[#8060A8]/50 transition-colors flex gap-3.5"
                   >
                     <div className="w-16 h-24 rounded-lg overflow-hidden bg-[#101014] shrink-0 relative border border-white/[0.06]">
-                      {rec.poster_url ? (
+                      {contentImageUrl(rec.poster_url) ? (
                         <Image
-                          src={rec.poster_url}
+                          src={contentImageUrl(rec.poster_url)!}
                           alt={rec.title}
                           fill
                           sizes="64px"

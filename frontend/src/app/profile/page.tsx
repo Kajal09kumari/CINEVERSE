@@ -21,6 +21,8 @@ import {
   Trash2,
   UserCheck,
 } from 'lucide-react';
+import { Navbar } from '@/components/layout/Navbar';
+import { Footer } from '@/components/layout/Footer';
 import { Container } from '@/components/ui/Container';
 import { Button } from '@/components/ui/Button';
 import {
@@ -236,8 +238,10 @@ export default function ProfilePage() {
   }
 
   return (
-    <main className="min-h-screen pt-24 pb-20">
-      <Container className="space-y-10">
+    <div className="min-h-screen flex flex-col bg-[#101014] text-[#F5F2F7] overflow-x-hidden">
+      <Navbar />
+      <main className="flex-1 min-w-0 pt-28 pb-20">
+        <Container className="space-y-10">
         {/* Header + Active Profile Switcher */}
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
           <div className="space-y-2">
@@ -726,7 +730,9 @@ export default function ProfilePage() {
             </div>
           </section>
         )}
-      </Container>
-    </main>
+        </Container>
+      </main>
+      <Footer />
+    </div>
   );
 }

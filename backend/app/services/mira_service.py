@@ -558,6 +558,26 @@ class MiraService:
             user_id=payload.user_id,
         )
 
+        from app.services.analytics_service import track_product_event_safe
+
+        if not prev_state:
+            track_product_event_safe(
+                event_type="mira_conversation_started",
+                user_id=payload.user_id,
+                session_id=payload.session_id,
+                source_surface="mira_chat",
+                dedupe_key=f"mira_start:{payload.session_id}",
+                metadata={"intent": constraints.intent},
+            )
+        if cards:
+            track_product_event_safe(
+                event_type="recommendation_displayed",
+                user_id=payload.user_id,
+                session_id=payload.session_id,
+                source_surface="mira_chat",
+                metadata={"count": len(cards), "intent": constraints.intent},
+            )
+
         return MiraChatResponse(
             session_id=payload.session_id,
             reply=reply_text,

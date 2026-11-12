@@ -5,11 +5,15 @@ Configures the FastAPI instance, CORS middleware, Watchmode lifecycle,
 and provider-neutral API routers.
 """
 
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
+import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app.api.routes.analytics import router as analytics_router
 from app.api.routes.content import router as content_router
 from app.api.routes.health import router as health_router
 from app.api.routes.library import router as library_router
@@ -77,9 +81,50 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_rate_buckets: dict[str, deque[float]] = defaultdict(deque)
+
+
+@app.middleware("http")
+async def security_and_rate_limit_middleware(request: Request, call_next):
+    """Apply sliding-window rate limiting and standard security headers."""
+    limit = max(1, int(settings.rate_limit_per_minute))
+    if request.method != "OPTIONS" and request.url.path != "/health":
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        bucket = _rate_buckets[client_ip]
+        while bucket and now - bucket[0] > 60.0:
+            bucket.popleft()
+        if len(bucket) >= limit:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded. Please retry shortly."},
+                headers={"Retry-After": "60"},
+            )
+        bucket.append(now)
+
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+    )
+    return response
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(_request: Request, _exc: Exception) -> JSONResponse:
+    """Prevent internal stack traces or secrets from leaking to API clients."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected internal server error occurred."},
+    )
+
+
 app.include_router(health_router, tags=["Health"])
 app.include_router(content_router)
 app.include_router(library_router)
 app.include_router(recommendations_router)
 app.include_router(mira_router)
+app.include_router(analytics_router)
 app.include_router(movies_router, deprecated=True)
