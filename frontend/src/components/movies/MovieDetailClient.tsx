@@ -26,6 +26,14 @@ import {
   Tv,
   Users,
   PlayCircle,
+  FolderPlus,
+  ThumbsUp,
+  ThumbsDown,
+  Eye,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  MinusCircle,
 } from 'lucide-react';
 import { Container } from '@/components/ui/Container';
 import { Button } from '@/components/ui/Button';
@@ -35,13 +43,33 @@ import { MovieSection } from './MovieSection';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { ApiError } from '@/services/api';
 import {
+  getContentEpisodes,
   getMovieDetails,
   getSimilarMovies,
   movieDetailToSummary,
   resolveLegacyTmdbId,
 } from '@/services/movieService';
+import {
+  addToCollection,
+  fetchCollections,
+  fetchUserRatings,
+  saveUserRating,
+} from '@/services/libraryService';
+import {
+  getSimilarRecommendations,
+  recordInteraction,
+  submitRecommendationFeedback,
+} from '@/services/miraService';
+import { getActiveUserId } from '@/lib/userContext';
 import { contentImageUrl, releaseYear } from '@/lib/utils';
-import type { Movie, MovieDetail } from '@/types';
+import type {
+  Collection,
+  EpisodeInfo,
+  FeedbackType,
+  Movie,
+  MovieDetail,
+  RecommendedTitleCard,
+} from '@/types';
 
 interface MovieDetailClientProps {
   movieId: number;
@@ -69,12 +97,27 @@ export function MovieDetailClient({ movieId }: MovieDetailClientProps) {
   const { isInWatchlist, toggleWatchlist, hydrated } = useWatchlist();
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [similar, setSimilar] = useState<Movie[]>([]);
+  const [mlSimilar, setMlSimilar] = useState<RecommendedTitleCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [posterErr, setPosterErr] = useState(false);
   const [backdropErr, setBackdropErr] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
+
+  // User library & taste signals
+  const [userRating, setUserRating] = useState<number | null>(null);
+  const [ratingSavedNote, setRatingSavedNote] = useState<string | null>(null);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [collectionMenuOpen, setCollectionMenuOpen] = useState(false);
+  const [collectionMessage, setCollectionMessage] = useState<string | null>(null);
+  const [feedbackNote, setFeedbackNote] = useState<string | null>(null);
+  const [activeFeedback, setActiveFeedback] = useState<FeedbackType | null>(null);
+
+  // TV Series interactive episode drawer
+  const [expandedSeason, setExpandedSeason] = useState<number | null>(null);
+  const [episodesBySeason, setEpisodesBySeason] = useState<Record<number, EpisodeInfo[]>>({});
+  const [loadingSeason, setLoadingSeason] = useState<number | null>(null);
 
   const isInvalidId = !Number.isFinite(movieId) || movieId <= 0;
 
@@ -101,11 +144,40 @@ export function MovieDetailClient({ movieId }: MovieDetailClientProps) {
         setPosterErr(false);
         setBackdropErr(false);
 
-        try {
-          const simRes = await getSimilarMovies(detail.id, 1);
-          if (active) setSimilar(simRes.results.slice(0, 8));
-        } catch {
-          if (active) setSimilar([]);
+        const uid = getActiveUserId();
+        void recordInteraction({
+          user_id: uid,
+          content_id: detail.id,
+          title: detail.title,
+          content_type: detail.content_type,
+          genres: detail.genres.map((g) => g.name),
+          interaction_type: 'viewed',
+        }).catch(() => {});
+
+        const [simResult, mlResult, ratingsResult, colsResult] = await Promise.allSettled([
+          getSimilarMovies(detail.id, 1),
+          getSimilarRecommendations(detail.id, { userId: uid, topK: 6 }),
+          fetchUserRatings(uid),
+          fetchCollections(uid),
+        ]);
+        if (!active) return;
+
+        if (simResult.status === 'fulfilled') {
+          setSimilar(simResult.value.results.slice(0, 8));
+        } else {
+          setSimilar([]);
+        }
+        if (mlResult.status === 'fulfilled') {
+          setMlSimilar(mlResult.value.results);
+        } else {
+          setMlSimilar([]);
+        }
+        if (ratingsResult.status === 'fulfilled') {
+          const found = ratingsResult.value.find((r) => r.content_id === detail.id);
+          setUserRating(found ? found.rating : null);
+        }
+        if (colsResult.status === 'fulfilled') {
+          setCollections(colsResult.value);
         }
       } catch (err) {
         if (!active) return;
@@ -218,6 +290,81 @@ export function MovieDetailClient({ movieId }: MovieDetailClientProps) {
     : null;
   const posterSrc = !posterErr ? contentImageUrl(movie.poster_path) : null;
   const summaryForWatchlist = movieDetailToSummary(movie);
+
+  const handleRate = async (score: number) => {
+    setUserRating(score);
+    setRatingSavedNote(`Saved your ${score}/10 rating`);
+    try {
+      await saveUserRating(movie.id, score, getActiveUserId());
+    } catch {
+      setRatingSavedNote('Could not sync rating right now.');
+    }
+  };
+
+  const handleFeedback = async (type: FeedbackType) => {
+    setActiveFeedback(type);
+    try {
+      const res = await submitRecommendationFeedback({
+        user_id: getActiveUserId(),
+        feedback_type: type,
+        content_id: movie.id,
+        title: movie.title,
+      });
+      setFeedbackNote(res.profile_note);
+    } catch {
+      setFeedbackNote('Recorded feedback locally.');
+    }
+  };
+
+  const handleProgress = async (pct: number) => {
+    try {
+      await recordInteraction({
+        user_id: getActiveUserId(),
+        content_id: movie.id,
+        title: movie.title,
+        content_type: movie.content_type,
+        genres: movie.genres.map((g) => g.name),
+        interaction_type: 'progress',
+        progress_pct: pct,
+      });
+      setFeedbackNote(
+        pct >= 95
+          ? 'Marked completed! Removed from Continue Exploring.'
+          : `Saved ${pct}% watch progress for Continue Exploring.`
+      );
+    } catch {
+      setFeedbackNote('Could not save watch progress.');
+    }
+  };
+
+  const handleAddCollection = async (collectionId: number, collectionName: string) => {
+    try {
+      await addToCollection(collectionId, movie.id, getActiveUserId());
+      setCollectionMessage(`Added to "${collectionName}"`);
+      setCollectionMenuOpen(false);
+    } catch {
+      setCollectionMessage('Failed to add to collection.');
+    }
+  };
+
+  const handleToggleSeason = async (seasonNumber: number | null) => {
+    const sNum = seasonNumber ?? 1;
+    if (expandedSeason === sNum) {
+      setExpandedSeason(null);
+      return;
+    }
+    setExpandedSeason(sNum);
+    if (episodesBySeason[sNum]) return;
+    setLoadingSeason(sNum);
+    try {
+      const eps = await getContentEpisodes(movie.id, sNum);
+      setEpisodesBySeason((prev) => ({ ...prev, [sNum]: eps }));
+    } catch {
+      setEpisodesBySeason((prev) => ({ ...prev, [sNum]: [] }));
+    } finally {
+      setLoadingSeason(null);
+    }
+  };
 
   const typeLabel =
     movie.content_type === 'DOCUMENTARY' || movie.is_documentary
@@ -361,7 +508,7 @@ export function MovieDetailClient({ movieId }: MovieDetailClientProps) {
             )}
 
             {/* Primary Actions */}
-            <div className="pt-2 flex flex-wrap gap-3">
+            <div className="pt-2 flex flex-wrap items-center gap-3">
               <Button
                 onClick={() => toggleWatchlist(summaryForWatchlist)}
                 variant={saved ? 'amber' : 'primary'}
@@ -370,6 +517,42 @@ export function MovieDetailClient({ movieId }: MovieDetailClientProps) {
                 {saved ? <Check size={16} /> : <Bookmark size={16} />}
                 {saved ? 'In Watchlist' : 'Add to Watchlist'}
               </Button>
+
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setCollectionMenuOpen((o) => !o)}
+                  className="inline-flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium bg-[#17161D] hover:bg-[#1C1A23] text-[#F5F2F7] border border-white/[0.1] transition-colors"
+                >
+                  <FolderPlus size={15} className="text-[#A68BC7]" />
+                  Save to Collection
+                </button>
+                {collectionMenuOpen && (
+                  <div className="absolute left-0 mt-2 w-60 rounded-xl bg-[#17161D] border border-white/[0.12] shadow-xl p-2 z-30 space-y-1">
+                    {collections.length === 0 ? (
+                      <Link
+                        href="/collections"
+                        className="block px-3 py-2 rounded-lg text-xs text-[#A68BC7] hover:bg-white/[0.04]"
+                      >
+                        No collections yet — create one
+                      </Link>
+                    ) : (
+                      collections.map((col) => (
+                        <button
+                          key={col.id}
+                          type="button"
+                          onClick={() => handleAddCollection(col.id, col.name)}
+                          className="w-full text-left px-3 py-2 rounded-lg text-xs text-[#F5F2F7] hover:bg-white/[0.06] flex items-center justify-between"
+                        >
+                          <span className="truncate">{col.name}</span>
+                          <span className="text-[#77727F]">{col.item_count}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
               <Button href="/discover" variant="secondary" size="lg">
                 Browse More Titles
               </Button>
@@ -384,6 +567,101 @@ export function MovieDetailClient({ movieId }: MovieDetailClientProps) {
                   Watch Trailer
                   <ExternalLink size={13} />
                 </a>
+              )}
+            </div>
+
+            {collectionMessage && (
+              <p className="text-xs text-[#A68BC7]">{collectionMessage}</p>
+            )}
+
+            {/* User Rating & Taste Feedback */}
+            <div className="p-4 rounded-2xl bg-[#17161D]/90 border border-white/[0.08] space-y-3 max-w-2xl">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-semibold tracking-[0.12em] uppercase text-[#AAA5B3]">
+                  Your Rating {userRating ? `· ${userRating}/10` : ''}
+                </span>
+                <div className="flex flex-wrap items-center gap-1">
+                  {[2, 4, 6, 7, 8, 9, 10].map((score) => (
+                    <button
+                      key={score}
+                      type="button"
+                      onClick={() => handleRate(score)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                        userRating === score
+                          ? 'bg-[#D9A45D] text-[#101014] border-[#D9A45D]'
+                          : 'bg-[#101014] text-[#AAA5B3] border-white/[0.08] hover:text-[#F5F2F7]'
+                      }`}
+                    >
+                      {score}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {ratingSavedNote && (
+                <p className="text-[11px] text-[#D9A45D]">{ratingSavedNote}</p>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/[0.06]">
+                <span className="text-xs text-[#77727F] mr-1">MIRA signal:</span>
+                <button
+                  type="button"
+                  onClick={() => handleFeedback('like')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+                    activeFeedback === 'like'
+                      ? 'bg-[#8060A8]/30 text-[#F5F2F7] border-[#A68BC7]'
+                      : 'bg-[#101014] text-[#AAA5B3] border-white/[0.08] hover:text-[#F5F2F7]'
+                  }`}
+                >
+                  <ThumbsUp size={12} />
+                  Like
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFeedback('dislike')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+                    activeFeedback === 'dislike'
+                      ? 'bg-red-500/20 text-red-200 border-red-400/40'
+                      : 'bg-[#101014] text-[#AAA5B3] border-white/[0.08] hover:text-[#F5F2F7]'
+                  }`}
+                >
+                  <ThumbsDown size={12} />
+                  Dislike
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFeedback('already_watched')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+                    activeFeedback === 'already_watched'
+                      ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/40'
+                      : 'bg-[#101014] text-[#AAA5B3] border-white/[0.08] hover:text-[#F5F2F7]'
+                  }`}
+                >
+                  <Eye size={12} />
+                  Already Watched
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFeedback('less_like_this')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+                    activeFeedback === 'less_like_this'
+                      ? 'bg-amber-500/20 text-amber-200 border-amber-400/40'
+                      : 'bg-[#101014] text-[#AAA5B3] border-white/[0.08] hover:text-[#F5F2F7]'
+                  }`}
+                >
+                  <MinusCircle size={12} />
+                  Less like this
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleProgress(50)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border bg-[#101014] text-[#D9A45D] border-white/[0.08] hover:border-[#D9A45D]/40 transition-colors"
+                >
+                  <Clock size={12} />
+                  In Progress (50%)
+                </button>
+              </div>
+              {feedbackNote && (
+                <p className="text-[11px] text-[#AAA5B3]">{feedbackNote}</p>
               )}
             </div>
 
@@ -452,33 +730,93 @@ export function MovieDetailClient({ movieId }: MovieDetailClientProps) {
               </div>
             )}
 
-            {/* TV Series Seasons */}
+            {/* TV Series Seasons & Episode Browser */}
             {movie.seasons.length > 0 && (
-              <div className="pt-4 space-y-2.5">
+              <div className="pt-4 space-y-3">
                 <h2 className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-[0.16em] uppercase text-[#77727F]">
                   <Tv size={13} />
-                  Seasons ({movie.seasons.length})
+                  Seasons & Episodes ({movie.seasons.length})
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-3xl">
-                  {movie.seasons.slice(0, 6).map((season) => (
-                    <div
-                      key={season.id}
-                      className="p-3.5 rounded-xl bg-[#17161D] border border-white/[0.08] space-y-1"
-                    >
-                      <p className="text-sm font-medium text-[#F5F2F7]">
-                        {season.name || `Season ${season.number ?? ''}`}
-                      </p>
-                      <p className="text-xs text-[#77727F]">
-                        {[
-                          season.episode_count ? `${season.episode_count} episodes` : null,
-                          season.air_date ? releaseYear(season.air_date) : null,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ') || 'Season details available'}
-                      </p>
-                    </div>
-                  ))}
+                  {movie.seasons.slice(0, 9).map((season, idx) => {
+                    const sNum = season.number ?? idx + 1;
+                    const isOpen = expandedSeason === sNum;
+                    return (
+                      <button
+                        key={season.id}
+                        type="button"
+                        onClick={() => handleToggleSeason(sNum)}
+                        aria-expanded={isOpen}
+                        className={`text-left p-3.5 rounded-xl border transition-colors space-y-1 ${
+                          isOpen
+                            ? 'bg-[#8060A8]/20 border-[#A68BC7]'
+                            : 'bg-[#17161D] border-white/[0.08] hover:border-white/[0.16]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium text-[#F5F2F7]">
+                            {season.name || `Season ${sNum}`}
+                          </p>
+                          {isOpen ? (
+                            <ChevronUp size={14} className="text-[#A68BC7]" />
+                          ) : (
+                            <ChevronDown size={14} className="text-[#77727F]" />
+                          )}
+                        </div>
+                        <p className="text-xs text-[#77727F]">
+                          {[
+                            season.episode_count ? `${season.episode_count} episodes` : null,
+                            season.air_date ? releaseYear(season.air_date) : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || 'Click to inspect episodes'}
+                        </p>
+                      </button>
+                    );
+                  })}
                 </div>
+
+                {expandedSeason !== null && (
+                  <div className="max-w-3xl rounded-2xl bg-[#17161D] border border-white/[0.08] p-4 space-y-3">
+                    <p className="text-xs font-semibold tracking-[0.12em] uppercase text-[#A68BC7]">
+                      Season {expandedSeason} Episodes
+                    </p>
+                    {loadingSeason === expandedSeason ? (
+                      <p className="text-xs text-[#AAA5B3]">Loading episodes from Watchmode…</p>
+                    ) : (episodesBySeason[expandedSeason] ?? []).length === 0 ? (
+                      <p className="text-xs text-[#77727F]">
+                        No episode guide entries returned for Season {expandedSeason}.
+                      </p>
+                    ) : (
+                      <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                        {(episodesBySeason[expandedSeason] ?? []).map((ep) => (
+                          <div
+                            key={ep.id}
+                            className="p-3 rounded-xl bg-[#101014]/80 border border-white/[0.06] space-y-1"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs sm:text-sm font-medium text-[#F5F2F7]">
+                                {ep.episode_number != null ? `E${ep.episode_number} · ` : ''}
+                                {ep.name || 'Untitled Episode'}
+                              </p>
+                              <span className="text-[11px] text-[#77727F]">
+                                {[
+                                  ep.runtime_minutes ? `${ep.runtime_minutes} min` : null,
+                                  ep.release_date || null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </span>
+                            </div>
+                            {ep.overview && (
+                              <p className="text-xs text-[#AAA5B3] line-clamp-2">{ep.overview}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -489,6 +827,69 @@ export function MovieDetailClient({ movieId }: MovieDetailClientProps) {
         </div>
       </Container>
 
+      {/* Hybrid ML Similar Recommendations */}
+      {mlSimilar.length > 0 && (
+        <section className="pt-8 pb-10 border-t border-white/[0.06]">
+          <Container className="space-y-5">
+            <div className="space-y-1">
+              <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-[0.2em] uppercase text-[#A68BC7]">
+                <Sparkles size={12} />
+                CINEVERSE Hybrid ML Engine
+              </p>
+              <h2 className="font-serif text-2xl sm:text-3xl font-semibold text-[#F5F2F7]">
+                Recommended Because You Viewed This
+              </h2>
+              <p className="text-xs sm:text-sm text-[#AAA5B3]">
+                TF-IDF content similarity blended with MovieLens collaborative SVD factors.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {mlSimilar.slice(0, 6).map((rec) => {
+                const targetHref = rec.content_id
+                  ? `/movie/${rec.content_id}`
+                  : `/discover?q=${encodeURIComponent(rec.title)}`;
+                return (
+                  <Link
+                    key={`${rec.movielens_id ?? rec.title}`}
+                    href={targetHref}
+                    className="group p-4 rounded-2xl bg-[#17161D] border border-white/[0.08] hover:border-[#8060A8]/50 transition-colors flex gap-3.5"
+                  >
+                    <div className="w-16 h-24 rounded-lg overflow-hidden bg-[#101014] shrink-0 relative border border-white/[0.06]">
+                      {rec.poster_url ? (
+                        <Image
+                          src={rec.poster_url}
+                          alt={rec.title}
+                          fill
+                          sizes="64px"
+                          className="object-cover"
+                        />
+                      ) : (
+                        <PosterFallback title={rec.title} />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <p className="text-sm font-semibold text-[#F5F2F7] group-hover:text-[#A68BC7] truncate transition-colors">
+                        {rec.title}
+                      </p>
+                      <p className="text-[11px] text-[#77727F]">
+                        {[
+                          rec.release_year,
+                          rec.rating ? `★ ${rec.rating.toFixed(1)}` : null,
+                          rec.genres.slice(0, 2).join(', '),
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </p>
+                      <p className="text-xs text-[#AAA5B3] line-clamp-2">{rec.explanation}</p>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </Container>
+        </section>
+      )}
+
       {/* Metadata-based Similar Titles */}
       {similar.length > 0 && (
         <div className="pt-6 pb-16 border-t border-white/[0.06]">
@@ -496,7 +897,7 @@ export function MovieDetailClient({ movieId }: MovieDetailClientProps) {
             id="similar-movies"
             overline="Watchmode Metadata Match"
             title="Similar Titles"
-            subtitle="Metadata-based similar titles from Watchmode (personalised ML ranking arrives in the next milestone)."
+            subtitle="Catalog-matched similar titles from Watchmode."
             movies={similar}
             serifTitle
           />

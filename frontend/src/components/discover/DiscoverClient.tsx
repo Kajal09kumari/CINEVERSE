@@ -55,6 +55,14 @@ const LANGUAGE_OPTIONS = [
   { code: 'es', label: 'Spanish (ES)' },
 ] as const;
 
+const REGION_OPTIONS = [
+  { code: 'IN', label: 'India (IN)' },
+  { code: 'US', label: 'United States (US)' },
+  { code: 'GB', label: 'United Kingdom (GB)' },
+  { code: 'CA', label: 'Canada (CA)' },
+  { code: 'AU', label: 'Australia (AU)' },
+] as const;
+
 const RATING_OPTIONS = [
   { value: '', label: 'Any Rating' },
   { value: '6', label: '6.0+ Good' },
@@ -126,6 +134,7 @@ export function DiscoverClient() {
   const urlGenreParam = searchParams.get('genre') ?? '';
   const urlMoodParam = searchParams.get('mood') ?? '';
   const urlLanguage = searchParams.get('language') ?? '';
+  const urlRegion = (searchParams.get('region') ?? 'IN').toUpperCase();
   const urlYear = searchParams.get('year') ?? '';
   const urlMinRating = searchParams.get('min_rating') ?? '';
   const urlSortBy = parseSortOption(searchParams.get('sort_by'));
@@ -262,6 +271,7 @@ export function DiscoverClient() {
           content_type: urlContentType,
           genre: resolvedGenreIds || undefined,
           language: urlLanguage || undefined,
+          region: urlRegion || undefined,
           year: urlYear ? Number(urlYear) : undefined,
           min_rating: effectiveMinRating ? Number(effectiveMinRating) : undefined,
           sort_by: urlSortBy,
@@ -297,6 +307,7 @@ export function DiscoverClient() {
     urlContentType,
     resolvedGenreIds,
     urlLanguage,
+    urlRegion,
     urlYear,
     effectiveMinRating,
     urlSortBy,
@@ -316,6 +327,7 @@ export function DiscoverClient() {
       urlGenreParam ||
       urlMoodParam ||
       urlLanguage ||
+      urlRegion !== 'IN' ||
       urlYear ||
       urlMinRating ||
       urlSortBy !== 'popularity_desc'
@@ -500,7 +512,7 @@ export function DiscoverClient() {
         {filtersOpen && (
           <div className="space-y-5 pt-4 border-t border-white/[0.06]">
             {/* Dropdowns row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               {/* Language */}
               <label className="flex flex-col gap-1.5 text-xs text-[#AAA5B3]">
                 <span className="font-medium text-[#F5F2F7]">Language</span>
@@ -512,6 +524,26 @@ export function DiscoverClient() {
                   className="h-10 px-3 rounded-xl bg-[#101014] border border-white/[0.1] text-sm text-[#F5F2F7] focus:outline-none focus:border-[#8060A8]"
                 >
                   {LANGUAGE_OPTIONS.map((opt) => (
+                    <option key={opt.code} value={opt.code}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* Streaming Region */}
+              <label className="flex flex-col gap-1.5 text-xs text-[#AAA5B3]">
+                <span className="font-medium text-[#F5F2F7]">Region</span>
+                <select
+                  value={urlRegion}
+                  onChange={(e) =>
+                    updateParams({
+                      region: e.target.value === 'IN' ? null : e.target.value,
+                    })
+                  }
+                  className="h-10 px-3 rounded-xl bg-[#101014] border border-white/[0.1] text-sm text-[#F5F2F7] focus:outline-none focus:border-[#8060A8]"
+                >
+                  {REGION_OPTIONS.map((opt) => (
                     <option key={opt.code} value={opt.code}>
                       {opt.label}
                     </option>

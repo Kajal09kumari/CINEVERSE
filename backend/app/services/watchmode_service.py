@@ -988,3 +988,46 @@ class WatchmodeService:
             detail = await self.get_content_details(wm_id, include_extras=False)
             return ContentSummary(**detail.model_dump(include=set(ContentSummary.model_fields)))
         return self._normalize_summary_and_persist(first, full_details=False)
+
+    async def resolve_imdb_id(
+        self,
+        imdb_id: str,
+        *,
+        legacy_tmdb_id: int | None = None,
+        region: str | None = None,
+    ) -> ContentSummary | None:
+        """
+        Resolve a MovieLens IMDb ID (e.g. `tt0816692`) to a Watchmode ContentSummary.
+        Checks SQLite cache first (`imdb_id`, then `legacy_tmdb_id`) before spending a Watchmode search credit.
+        """
+        cleaned = (imdb_id or "").strip()
+        if cleaned:
+            cached = self._db.get_content_by_imdb_id(cleaned)
+            if cached is not None:
+                return self._dict_to_summary(cached)
+        if legacy_tmdb_id is not None:
+            cached_tmdb = self._db.get_by_legacy_tmdb_id(legacy_tmdb_id)
+            if cached_tmdb is not None:
+                return self._dict_to_summary(cached_tmdb)
+
+        if not cleaned:
+            return None
+
+        payload = await self._request(
+            "/search",
+            params={"search_field": "imdb_id", "search_value": cleaned},
+            credit_cost=1,
+        )
+        matches = (payload.get("title_results") or []) if isinstance(payload, dict) else []
+        if not matches:
+            return None
+        wm_id = _safe_int(matches[0].get("id"))
+        if wm_id is None:
+            return self._normalize_summary_and_persist(matches[0], full_details=False)
+        detail = await self.get_content_details(
+            wm_id,
+            region=region,
+            include_extras=False,
+        )
+        return ContentSummary(**detail.model_dump(include=set(ContentSummary.model_fields)))
+

@@ -276,7 +276,7 @@ export async function getContentEpisodes(
   contentId: number,
   seasonNumber?: number
 ): Promise<EpisodeInfo[]> {
-  const qs = seasonNumber !== undefined ? `?season_number=${seasonNumber}` : '';
+  const qs = seasonNumber !== undefined ? `?season=${seasonNumber}` : '';
   return apiRequest<EpisodeInfo[]>(`/api/content/${contentId}/episodes${qs}`);
 }
 
@@ -313,6 +313,7 @@ export async function discoverMovies(
     params.set('min_rating', String(filters.min_rating));
   }
   if (filters.sort_by) params.set('sort_by', filters.sort_by);
+  if (filters.region) params.set('region', filters.region);
   params.set('page', String(filters.page ?? 1));
   if (filters.limit) params.set('limit', String(filters.limit));
 
