@@ -1,67 +1,58 @@
 """
 CINEVERSE FastAPI Application Entry Point
 
-This file creates and configures the FastAPI app instance.
-All routers, middleware, and startup logic are registered here.
-
-Design decision: We keep main.py focused on app wiring.
-Business logic lives in services/, ML code in ml/.
+Configures the FastAPI instance, CORS middleware, Watchmode lifecycle,
+and provider-neutral API routers.
 """
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.content import router as content_router
 from app.api.routes.health import router as health_router
+from app.api.routes.movies import router as movies_router
 from app.core.config import settings
+from app.services.watchmode_service import WatchmodeService
 
-# ---------------------------------------------------------------------------
-# App instance
-# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Manage startup initialization and clean async resource teardown."""
+    application.state.watchmode_service = WatchmodeService()
+    print(f"\n🎬  {settings.app_name} v{settings.app_version} is running.")
+    print(f"    Frontend origin:     {settings.frontend_origin}")
+    print(f"    Watchmode key set:   {settings.has_watchmode_key}")
+    print(f"    Watchmode region:    {settings.watchmode_region}")
+    print(f"    Cache enabled:       {settings.cineverse_cache_enabled}")
+    print(f"    Debug mode:          {settings.debug}\n")
+    try:
+        yield
+    finally:
+        service = getattr(application.state, "watchmode_service", None)
+        if service is not None:
+            await service.aclose()
+        print("\n👋  CINEVERSE API shutting down.")
+
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="Intelligent movie discovery and recommendation platform.",
-    # Disable the auto-generated docs in production (debug=False)
+    description="Intelligent movie, TV series, and documentary discovery platform.",
+    lifespan=lifespan,
     docs_url="/docs" if settings.debug else None,
     redoc_url="/redoc" if settings.debug else None,
 )
 
-# ---------------------------------------------------------------------------
-# CORS middleware
-# ---------------------------------------------------------------------------
-# We explicitly list the allowed origin instead of using "*" because:
-# 1. Wildcard origins cannot be used with credentials (cookies, auth headers).
-# 2. Restricting origins is a security best practice.
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_origin],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# ---------------------------------------------------------------------------
-# Routers
-# ---------------------------------------------------------------------------
-
 app.include_router(health_router, tags=["Health"])
-
-# ---------------------------------------------------------------------------
-# Startup / shutdown events
-# ---------------------------------------------------------------------------
-
-
-@app.on_event("startup")
-async def on_startup() -> None:
-    """Runs once when the server starts. Good place to warm up ML models."""
-    print(f"\n🎬  {settings.app_name} v{settings.app_version} is running.")
-    print(f"    Frontend origin: {settings.frontend_origin}")
-    print(f"    Debug mode:      {settings.debug}\n")
-
-
-@app.on_event("shutdown")
-async def on_shutdown() -> None:
-    """Runs once when the server shuts down cleanly."""
-    print("\n👋  CINEVERSE API shutting down.")
+app.include_router(content_router)
+app.include_router(movies_router, deprecated=True)

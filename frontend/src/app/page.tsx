@@ -1,31 +1,20 @@
 /**
- * CINEVERSE Home Page (Day 1 Placeholder)
+ * CINEVERSE Homepage
  *
- * This is a minimal entry point that shows the backend connection status.
- * The full cinematic homepage will be built in a later phase.
+ * Combines full-bleed cinematic Hero presentation with centered
+ * 1440px content alignment, tightened section rhythm, and live Watchmode discovery.
  */
 
-import { BackendStatus } from '@/components/ui/BackendStatus';
+import { Navbar } from '@/components/layout/Navbar';
+import { Footer } from '@/components/layout/Footer';
+import { HomeDiscoveryClient } from '@/components/home/HomeDiscoveryClient';
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-8 p-8">
-      <div className="text-center space-y-3">
-        <h1
-          className="text-4xl font-bold tracking-widest"
-          style={{ color: 'var(--color-text-primary)' }}
-        >
-          CINEVERSE
-        </h1>
-        <p
-          className="text-sm tracking-[0.3em] uppercase"
-          style={{ color: 'var(--color-text-secondary)' }}
-        >
-          Discover Beyond the Ordinary
-        </p>
-      </div>
-
-      <BackendStatus />
-    </main>
+    <div className="min-h-screen flex flex-col bg-[#101014] text-[#F5F2F7] overflow-x-hidden">
+      <Navbar />
+      <HomeDiscoveryClient />
+      <Footer />
+    </div>
   );
 }

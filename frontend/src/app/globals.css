@@ -3,43 +3,57 @@
 /**
  * CINEVERSE Global Styles
  *
- * Design system: Cinematic Luxury
- * - Deep charcoal backgrounds
- * - Midnight black surfaces
- * - Muted violet accents
- * - Warm amber highlights
+ * Design language: Cinematic Luxury
+ *
+ * IMPORTANT (Tailwind v4 Cascade Layers):
+ * Base element resets MUST live inside `@layer base` so they never
+ * override `@layer utilities` classes such as `mx-auto`, `px-*`, or `p-*`.
  */
 
-/* ─── CSS Custom Properties (Design Tokens) ──────────────────────────────── */
+/* ─── Design Tokens ─────────────────────────────────────────────────────── */
 :root {
   /* Backgrounds */
-  --color-bg-primary: #0d0d0f;
-  --color-bg-surface: #111115;
-  --color-bg-elevated: #18181f;
-  --color-bg-card: #1a1a24;
+  --color-bg-primary:   #101014;
+  --color-bg-secondary: #17161D;
+  --color-bg-card:      #1C1A23;
+  --color-bg-elevated:  #221F2B;
 
   /* Text */
-  --color-text-primary: #f0eee8;
-  --color-text-secondary: #9e9ba5;
-  --color-text-muted: #5c5869;
+  --color-text-primary:   #F5F2F7;
+  --color-text-secondary: #AAA5B3;
+  --color-text-muted:     #77727F;
 
-  /* Accent: Muted violet */
-  --color-accent-violet: #7c6fcd;
-  --color-accent-violet-dim: #4a4280;
-  --color-accent-violet-muted: #2d2850;
+  /* Accents */
+  --color-violet:        #8060A8;
+  --color-violet-soft:   #A68BC7;
+  --color-violet-muted:  #3D3160;
+  --color-violet-dim:    rgba(128, 96, 168, 0.15);
 
-  /* Highlight: Warm amber */
-  --color-accent-amber: #d4913a;
-  --color-accent-amber-dim: #9e6520;
-  --color-accent-amber-muted: #3d2810;
+  --color-amber:         #D9A45D;
+  --color-amber-muted:   rgba(217, 164, 93, 0.15);
 
   /* Borders */
-  --color-border: #252530;
-  --color-border-subtle: #1c1c26;
+  --color-border:        rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.14);
 
-  /* Typography scale */
-  --font-display: 'Inter', system-ui, sans-serif;
-  --font-body: 'Inter', system-ui, sans-serif;
+  /* Typography */
+  --font-playfair: 'Playfair Display', Georgia, serif;
+  --font-inter:    'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Spacing & Radius */
+  --section-gap-mobile:  72px;
+  --section-gap-desktop: 88px;
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  16px;
+  --radius-xl:  24px;
+
+  /* Transitions */
+  --ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast:   150ms;
+  --duration-normal: 250ms;
+  --duration-slow:   400ms;
 }
 
 @theme inline {
@@ -47,54 +61,108 @@
   --color-foreground: var(--color-text-primary);
 }
 
-/* ─── Base Reset ─────────────────────────────────────────────────────────── */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/* ─── Layered Base Styles ────────────────────────────────────────────────── */
+@layer base {
+  html {
+    height: 100%;
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-family: var(--font-inter);
+    min-height: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-violet);
+    outline-offset: 3px;
+    border-radius: var(--radius-sm);
+  }
+
+  ::selection {
+    background: var(--color-violet-muted);
+    color: var(--color-text-primary);
+  }
 }
 
-html {
-  height: 100%;
-  scroll-behavior: smooth;
+/* ─── Typography Utilities ───────────────────────────────────────────────── */
+.font-display {
+  font-family: var(--font-playfair);
+  font-optical-sizing: auto;
 }
 
-body {
-  background-color: var(--color-bg-primary);
-  color: var(--color-text-primary);
-  font-family: var(--font-body);
-  min-height: 100%;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* ─── Reusable Centered Container ────────────────────────────────────────── */
+.cineverse-container {
+  width: 100%;
+  max-width: 1440px;
+  min-width: 0;
+  margin-inline: auto;
+  padding-inline: 20px;
 }
 
-/* ─── Scrollbar Styling ──────────────────────────────────────────────────── */
+@media (min-width: 768px) {
+  .cineverse-container {
+    padding-inline: 32px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .cineverse-container {
+    padding-inline: 48px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .cineverse-container {
+    padding-inline: 64px;
+  }
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
+  height: 5px;
 }
-
 ::-webkit-scrollbar-track {
-  background: var(--color-bg-surface);
+  background: var(--color-bg-secondary);
 }
-
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 3px;
+  background: var(--color-border-strong);
+  border-radius: 99px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-accent-violet-dim);
+  background: var(--color-violet-muted);
 }
 
-/* ─── Focus Styles ───────────────────────────────────────────────────────── */
-:focus-visible {
-  outline: 2px solid var(--color-accent-violet);
-  outline-offset: 2px;
-  border-radius: 4px;
+/* ─── Hide scrollbar for horizontal carousels ────────────────────────────── */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
-/* ─── Link Reset ─────────────────────────────────────────────────────────── */
-a {
-  color: inherit;
-  text-decoration: none;
+/* ─── Reduced-motion support ─────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

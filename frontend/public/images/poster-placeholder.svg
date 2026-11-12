@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600" fill="none">
+  <rect width="400" height="600" fill="#1C1A23"/>
+  <rect x="1" y="1" width="398" height="598" stroke="rgba(255,255,255,0.08)" stroke-width="2"/>
+  <circle cx="200" cy="270" r="36" fill="#17161D" stroke="#8060A8" stroke-opacity="0.4" stroke-width="2"/>
+  <path d="M188 258h24v24h-24z" stroke="#8060A8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M188 265h24M194 258v24M206 258v24" stroke="#8060A8" stroke-width="1.5" stroke-opacity="0.7"/>
+  <text x="200" y="340" text-anchor="middle" fill="#77727F" font-family="system-ui, sans-serif" font-size="13" letter-spacing="3">CINEVERSE</text>
+</svg>

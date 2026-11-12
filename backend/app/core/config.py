@@ -1,42 +1,86 @@
 """
 CINEVERSE Backend Configuration
 
-This module reads environment variables and makes them available
-throughout the application via a single Settings object.
-Using pydantic-settings means environment variables are type-checked
-and validated on startup — a production best practice.
+Reads environment variables and validates settings at startup using pydantic-settings.
+Watchmode, MovieLens, LLM, and database settings are kept strictly server-side.
 """
 
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """Application settings loaded from backend/.env and environment variables."""
 
     # Application metadata
     app_name: str = "CINEVERSE API"
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.0"
     debug: bool = False
 
     # CORS — the Next.js dev server address
     frontend_origin: str = "http://localhost:3000"
 
-    # External API credentials (populated from .env file)
-    tmdb_access_token: str = ""
-    llm_api_key: str = ""
+    # Watchmode API credentials & defaults
+    watchmode_api_key: str = ""
+    watchmode_base_url: str = "https://api.watchmode.com/v1"
+    watchmode_region: str = "IN"
+    watchmode_timeout_seconds: float = 12.0
+    watchmode_max_retries: int = 2
+    watchmode_cache_ttl_seconds: int = 86400  # 24h (strictly within Watchmode 30-day rule)
+    cineverse_cache_enabled: bool = True
 
-    # Supabase credentials
+    # MovieLens & Local SQLite storage
+    movielens_data_dir: str = "./ml/data/raw"
+    database_url: str = "sqlite:///./data/cineverse.db"
+
+    # Optional external integrations
+    llm_api_key: str = ""
     supabase_url: str = ""
     supabase_key: str = ""
 
+    # Legacy TMDB credential kept optional only for migration compatibility (never called)
+    tmdb_access_token: str = ""
+
     model_config = SettingsConfigDict(
-        # Look for a .env file in the backend directory
-        env_file=".env",
+        env_file=str(BACKEND_DIR / ".env"),
         env_file_encoding="utf-8",
-        # Allow extra fields to prevent errors if .env has additional vars
         extra="ignore",
     )
 
+    @property
+    def has_watchmode_key(self) -> bool:
+        """Return True when a non-placeholder Watchmode API key is configured."""
+        key = (self.watchmode_api_key or "").strip()
+        return bool(key and key != "your_watchmode_api_key")
 
-# A single shared instance used throughout the app
+    @property
+    def sqlite_db_path(self) -> Path:
+        """Resolve local SQLite file path from database_url."""
+        raw = (self.database_url or "").strip()
+        if raw.startswith("sqlite:///"):
+            rel = raw.removeprefix("sqlite:///")
+            candidate = Path(rel)
+            return candidate if candidate.is_absolute() else (BACKEND_DIR / candidate).resolve()
+        return (BACKEND_DIR / "data" / "cineverse.db").resolve()
+
+    @property
+    def resolved_movielens_dir(self) -> Path:
+        """Resolve MovieLens dataset directory path."""
+        candidate = Path(self.movielens_data_dir)
+        return candidate if candidate.is_absolute() else (BACKEND_DIR / candidate).resolve()
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        """Return deduplicated CORS allowed origins."""
+        origins = [self.frontend_origin]
+        if self.debug:
+            for local_origin in ("http://localhost:3000", "http://127.0.0.1:3000"):
+                if local_origin not in origins:
+                    origins.append(local_origin)
+        return origins
+
+
+# Single shared settings instance
 settings = Settings()

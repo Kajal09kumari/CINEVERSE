@@ -43,11 +43,12 @@ backend/ml/models/*.h5
 backend/ml/models/*.pt
 backend/ml/models/*.bin
 
-# Generated/downloaded datasets.
-# Only the specific dataset subdirectories are excluded —
+# Generated/downloaded datasets & local SQLite data.
+# Only the specific dataset/database subdirectories are excluded —
 # NOT every *.csv or *.parquet in the entire project.
 # This way test fixtures, config CSVs, or docs-adjacent
 # data files elsewhere are never accidentally hidden.
+backend/data/
 backend/ml/data/raw/
 backend/ml/data/processed/
 backend/ml/data/external/

@@ -19,4 +19,4 @@ async def root() -> dict:
 @router.get("/health")
 async def health_check() -> dict:
     """Health check endpoint used by monitoring and the frontend connection check."""
-    return {"status": "healthy", "project": "CINEVERSE"}
+    return {"status": "ok", "service": "cineverse-backend"}
